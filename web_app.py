@@ -14,25 +14,14 @@ st.set_page_config(page_title="Wahl-O-Mat Pro", layout="centered")
 
 st.markdown("""
     <style>
-    /* Hintergrund und Schrift */
     @import url('https://googleapis.com');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-    /* Container Abstände */
     .main .block-container {
         padding-top: 2rem !important;
         padding-left: 0.8rem !important;
         padding-right: 0.8rem !important;
         max-width: 500px;
-    }
-
-    /* Modernes Card-Styling für jede Frage */
-    .vote-row {
-        background-color: #f8f9fa;
-        border-radius: 12px;
-        padding: 10px 15px;
-        margin-bottom: 8px; /* Abstand zwischen den Personen */
-        border: 1px solid #e9ecef;
     }
 
     .name-label {
@@ -42,16 +31,13 @@ st.markdown("""
         margin-bottom: 2px !important;
     }
 
-    /* Streamlit Radio-Buttons optimieren */
     div[data-testid="stWidgetLabel"] { display: none !important; }
 
-    /* Radio Buttons enger zusammen */
     div[data-testid="stVerticalBlock"] > div {
         margin-top: -0.4rem !important;
         gap: 0rem !important;
     }
 
-    /* Der "Stimme abgeben" Button */
     .stButton>button {
         width: 100%;
         height: 3.2em;
@@ -70,7 +56,6 @@ st.markdown("""
         transform: translateY(-1px);
     }
 
-    /* Überschrift */
     .wahl-titel {
         font-size: 1.8rem;
         font-weight: 800;
@@ -88,24 +73,39 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# Hilfsfunktion PDF
+# Hilfsfunktion PDF (FIX: Explizite Konvertierung zu bytes)
 def create_pdf_report(titel, waehler, ergebnisse, fragen):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(200, 15, txt=f"Ergebnis: {titel}", ln=True, align='C')
     pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt=f"Wähleranzahl: {waehler}", ln=True, align='L')
+    pdf.cell(200, 10, txt=f"Waehleranzahl: {waehler}", ln=True, align='L')
     pdf.ln(5)
+
     for i, frage in enumerate(fragen):
         pdf.set_font("Arial", 'B', 11)
         pdf.cell(200, 8, txt=f"{i + 1}. {frage}", ln=True)
+
         res = ergebnisse[i]
         total = sum(res.values())
-        line = f"JA: {res['JA']} | NEIN: {res['NEIN']} | ENTH: {res['ENTHALTUNG']}"
+
+        # Prozentberechnung
+        p_ja = f"({(res['JA'] / total * 100):.0f}%)" if total > 0 else "(0%)"
+        p_nein = f"({(res['NEIN'] / total * 100):.0f}%)" if total > 0 else "(0%)"
+        p_enth = f"({(res['ENTHALTUNG'] / total * 100):.0f}%)" if total > 0 else "(0%)"
+
+        line = f"JA: {res['JA']} {p_ja} | NEIN: {res['NEIN']} {p_nein} | ENTH: {res['ENTHALTUNG']} {p_enth}"
+
         pdf.set_font("Arial", size=10)
         pdf.cell(200, 6, txt=line, ln=True)
-    return pdf.output(dest='S').encode('latin-1')
+        pdf.ln(2)
+
+    # Wir wandeln das Ergebnis explizit in ein bytes-Objekt um
+    pdf_out = pdf.output(dest='S')
+    if isinstance(pdf_out, str):
+        return pdf_out.encode('latin-1')
+    return bytes(pdf_out)  # Wandelt bytearray sicher in bytes um
 
 
 if 'page' not in st.session_state:
@@ -123,7 +123,6 @@ if st.session_state.page == "setup":
     st.markdown("### **Abstimmung zu:**")
     fragen = []
     for i in range(int(anzahl)):
-        # Nur "Punkt X" als Label
         fragen.append(st.text_input(f"Punkt {i + 1}", key=f"f_setup_{i}", placeholder=f"Name für Punkt {i + 1}"))
 
     if st.button("WAHL STARTEN"):
@@ -143,9 +142,7 @@ elif st.session_state.page == "voting":
     current_votes = {}
     bereit = True
 
-    # Die Abstimmungs-Liste
     for i, frage in enumerate(st.session_state.fragen):
-        # Card-Start
         st.markdown(f'''<div style="margin-bottom: -15px;">
             <p class="name-label">{i + 1}. {frage}</p>
         </div>''', unsafe_allow_html=True)
@@ -162,7 +159,6 @@ elif st.session_state.page == "voting":
         if wahl is None: bereit = False
         st.markdown('<div style="border-bottom: 1px solid #eee; margin-bottom: 10px;"></div>', unsafe_allow_html=True)
 
-    # Haupt-Button
     if st.button("STIMME ABGEBEN"):
         if not bereit:
             st.warning("⚠️ Bitte überall eine Auswahl treffen!")
@@ -173,7 +169,6 @@ elif st.session_state.page == "voting":
             st.success("Gezählt!")
             st.rerun()
 
-    # Viel Platz nach dem Button wie gewünscht
     st.markdown("<div style='margin-bottom: 80px;'></div>", unsafe_allow_html=True)
 
     with st.expander("Admin: Beenden"):
@@ -190,7 +185,7 @@ elif st.session_state.page == "result":
     if PDF_SUPPORT:
         pdf_bytes = create_pdf_report(st.session_state.wahl_titel, st.session_state.waehler_anzahl,
                                       st.session_state.ergebnisse, st.session_state.fragen)
-        st.download_button("📥 PDF Export", data=pdf_bytes, file_name="ergebnis.pdf")
+        st.download_button("📥 PDF Export", data=pdf_bytes, file_name="ergebnis.pdf", mime="application/pdf")
 
     st.write(f"**Teilnehmer:** {st.session_state.waehler_anzahl}")
     for i, frage in enumerate(st.session_state.fragen):
